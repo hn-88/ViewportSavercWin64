@@ -83,7 +83,7 @@ inline void savematasimage(char* p, char* d, char* f, Mat m)
 int main(int argc, char *argv[])
 {
 	int num = 0;
-	qhyccd_handle *camhandle = NULL;
+	// qhyccd_handle *camhandle = NULL;
 	int ret;
 	char id[32];
 	//char camtype[16];
