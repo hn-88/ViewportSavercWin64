@@ -22,5 +22,9 @@ install:
 build:
 
   verbosity: minimal
+ 
+artifacts:
+
+- path: C:\projects\viewportsavercwin64\x64\Release\ViewportSaverc.exe
 
 
