@@ -4,3 +4,4 @@ image: Visual Studio 2015
 
 install:
 - choco install opencv --version=3.4.3
+- refreshenv
