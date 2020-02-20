@@ -3,6 +3,7 @@ image: Visual Studio 2015
 
 
 install:
-- choco install opencv 
+- choco install opencv --version=3.4.3
+- cmd: setx -m OPENCV_DIR C:\tools\OpenCV\Build\x64\vc14
 - refreshenv
 
