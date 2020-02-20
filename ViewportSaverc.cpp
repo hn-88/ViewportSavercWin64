@@ -1,28 +1,41 @@
-#ifdef _WIN64
+//#ifdef _WIN64
 //#include "stdafx.h"
-#include "windows.h"
+// VS2015 says stdafx.h not found, so remove it.
+// Then we can put the windows.h in the block below. 
+//#include "windows.h"
 // anything before a precompiled header is ignored, 
 // so no endif here! add #endif to compile on __unix__ !
-#endif
+//#endif
 #ifdef _WIN64
-//#include <qhyccd.h>
+#include "windows.h"
+#include <qhyccd.h>
 #endif
 
 
 /*
 * modified from ViewportSaver.cpp
-* and BscanFFTwebcam.cpp
-*
+
 * Saving viewport images
 * with inputs from ini file.
+* Written for colour QHY cameras.
 *
 * Saves frames on receipt of s key or spacebar
 *
+* r key toggles Red channel only mode
+* g key toggles Green channel only mode
+* b key toggles Blue channel only mode
+* 
+* + (or =) key increases exposure time by 0.1 ms
+* - (or _) key decreases exposure time by 0.1 ms
+* u key increases exposure time by 1 ms
+* d key decreases exposure time by 1 ms
+* U key increases exposure time by 10 ms
+* D key decreases exposure time by 10 ms
 *
 * ESC, x or X key quits
 *
 * Hari Nandakumar
-* 21 July 2019  *
+* 02 Feb 2020  *
 *
 *
 */
@@ -83,18 +96,19 @@ inline void savematasimage(char* p, char* d, char* f, Mat m)
 int main(int argc, char *argv[])
 {
 	int num = 0;
-	// qhyccd_handle *camhandle = NULL;
+	qhyccd_handle *camhandle = NULL;
 	int ret;
 	char id[32];
 	//char camtype[16];
 	int found = 0;
-	unsigned int w, h, bpp = 8, channels, cambitdepth = 16;
+	unsigned int w, h, bpp = 8, channels = 3, cambitdepth = 16;
 	unsigned int offsetx = 0, offsety = 0;
 	unsigned int indexi, manualindexi, averages = 1, opw, oph;
 	uint  indextemp;
 	
-	int camtime = 1, camgain = 1, camspeed = 1, cambinx = 2, cambiny = 2, usbtraffic = 10;
-	int camgamma = 1, binvalue = 1, normfactor = 1, normfactorforsave = 25;
+	int camtime = 1, camgain = 1, camspeed = 1, cambinx = 1, cambiny = 1, usbtraffic = 10;
+	int binvalue = 1, normfactor = 1, normfactorforsave = 25;
+	double camgamma = 1.0;
 	
 	bool doneflag = 0, skeypressed = 0;
 	
@@ -119,6 +133,7 @@ int main(int argc, char *argv[])
 	char filename[20];
 	char filenamec[20];
 	char pathname[140];
+	char gammastr[40];
 	char lambdamaxstr[40];
 	char lambdaminstr[40];
 	struct tm *timenow;
@@ -134,6 +149,8 @@ int main(int argc, char *argv[])
 		infile >> tempstring;
 		// first three lines of ini file are comments
 		infile >> camgain;
+		infile >> tempstring;
+		infile >> gammastr;
 		infile >> tempstring;
 		infile >> camtime;
 		infile >> tempstring;
@@ -160,43 +177,14 @@ int main(int argc, char *argv[])
 		infile >> dirdescr;
 		infile.close();
 
-		
+		camgamma = atof(gammastr);
 	}
 
-	else std::cout << "Unable to open ini file, using defaults.";
+	else std::cout << "Unable to open ini file, using defaults." << std::endl;
 	
-		// for webcam version, bit depth is 8, and w,h are taken from captured frame.
-	//////////////////////////////////////////////////////////////////////////
-	bpp = 8;
-	// try a capture, to initialize
-	// from OPENCV/samples/cpp/videocapture_basic.cpp
-	Mat frame;
-    VideoCapture cap;
-    Mat rgbchannels[3];
-    cap.open(0); 		// open default camera with default API
-    if (!cap.isOpened()) 
-		{
-		std::cerr << "ERROR! No camera detected, or could not open camera. \n";
-		//goto failure;
-		return -1;
-			 
-		}
-    cap.read(frame);
-    // check for error    
-	if (frame.empty()) 
-	{
-		std::cerr << "ERROR! empty frame captured.\n";
-		//goto failure;
-		return -1;
-	}
-	else
-	{
-		w = frame.cols;
-		//std::cerr << "w = " << w << ".\n";
-		h = frame.rows;
-	}
-	/////////////////////////////////////////////////////////
-
+	std::cout << "Binning has to be disabled for colour..." << std::endl;
+	
+	binvalue = 1;
 
 	namedWindow("show", 0); // 0 = WINDOW_NORMAL
 	moveWindow("show", 0, 0);
@@ -222,14 +210,13 @@ int main(int argc, char *argv[])
 	Mat m, opm, opmvector;
 	Mat tempmat;
 	 
-	Mat mraw;
+	Mat mraw, BGR[3];
 	Mat statusimg = Mat::zeros(cv::Size(600, 300), CV_64F);
 	Mat firstrowofstatusimg = statusimg(Rect(0, 0, 600, 50)); // x,y,width,height
 	Mat secrowofstatusimg = statusimg(Rect(0, 50, 600, 50));
 	Mat secrowofstatusimgRHS = statusimg(Rect(300, 50, 300, 50));
 	char textbuffer[80];
-
-	
+	bool Ronly=0, Bonly=0, Gonly=0;
 
 	timenow = localtime(&now);
 
@@ -238,26 +225,10 @@ int main(int argc, char *argv[])
 	strcat(dirname, dirdescr);
 #ifdef _WIN64
 	CreateDirectoryA(dirname, NULL);
-	cv::FileStorage outfile;
-	sprintf(filename, "BscanFFT.xml");
-	strcpy(pathname, dirname);
-	strcat(pathname, "\\");
-	strcat(pathname, filename);
-	outfile.open(pathname, cv::FileStorage::WRITE);
 #else
 	mkdir(dirname, 0755);
 #endif
 
-#ifdef __unix__	
-	sprintf(filename, "BscanFFT.m");
-	strcpy(pathname, dirname);
-	strcat(pathname, "/");
-	strcat(pathname, filename);
-	std::ofstream outfile(pathname);
-#endif
-
-
-/*
 	ret = InitQHYCCDResource();
 	if (ret != QHYCCD_SUCCESS)
 	{
@@ -291,14 +262,9 @@ int main(int argc, char *argv[])
 		printf("The camera is not QHYCCD or other error \n");
 		goto failure;
 	}
-	*/
-		 
-	found = 1;
- 
 
 	if (found == 1)
 	{
-		/*
 		camhandle = OpenQHYCCD(id);
 		if (camhandle != NULL)
 		{
@@ -410,20 +376,20 @@ int main(int argc, char *argv[])
 			printf("CONTROL_GAMMA fail\n");
 			goto failure;
 		}
-*/
+
 
 		if (cambitdepth == 8)
 		{
 
-			m = Mat::zeros(cv::Size(w, h), CV_8U);
-			mraw = Mat::zeros(cv::Size(w, h), CV_8U);
+			m = Mat::zeros(cv::Size(w, h), CV_8UC3);
+			mraw = Mat::zeros(cv::Size(w, h), CV_8UC3);
 		}
 		else // is 16 bit
 		{
-			m = Mat::zeros(cv::Size(w, h), CV_16U);
-			mraw = Mat::zeros(cv::Size(w, h), CV_16U);
+			m = Mat::zeros(cv::Size(w, h), CV_16UC3);
+			mraw = Mat::zeros(cv::Size(w, h), CV_16UC3);
 		}
-/*
+
 
 		ret = BeginQHYCCDLive(camhandle);
 		if (ret == QHYCCD_SUCCESS)
@@ -441,12 +407,11 @@ int main(int argc, char *argv[])
 		/////////////////////////////////////////
 		//outfile<<"%Data cube in MATLAB compatible format - m(h,w,slice)"<<std::endl;
 
-*/
+
 		doneflag = 0;
 
-		ret = 1;
-		/*
-		if (ret == 1)
+		ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+		if (ret == QHYCCD_SUCCESS)
 		{
 			sprintf(textbuffer, "Exp time = %d ", camtime);
 			secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
@@ -460,7 +425,7 @@ int main(int argc, char *argv[])
 			putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
 			imshow("Status", statusimg);
 			goto failure;
-		}*/
+		}
 		t_start = time(NULL);
 		fps = 0;
 
@@ -471,13 +436,39 @@ int main(int argc, char *argv[])
 		
 		while (1)		//camera frames acquisition loop
 		{
-			//ret = GetQHYCCDLiveFrame(camhandle, &w, &h, &bpp, &channels, mraw.data);
+			ret = GetQHYCCDLiveFrame(camhandle, &w, &h, &bpp, &channels, mraw.data);
 
-			if (ret == 1)
+			if (ret == QHYCCD_SUCCESS)
 			{
-				cap.read(frame);
-
-				frame.copyTo(m);
+				if (Ronly == 0 && Gonly == 0 && Bonly == 0 )
+				mraw.copyTo(m);
+				
+				if (Ronly == 1)
+				{
+					split(mraw, BGR);
+					//by default opencv puts channels in BGR order
+					BGR[1] = Mat::zeros(mraw.rows, mraw.cols, CV_8UC1); // green channel is set to 0
+					BGR[0] = Mat::zeros(mraw.rows, mraw.cols, CV_8UC1); // blue channel is set to 0
+					merge(BGR,3,m);
+				}
+				
+				if (Gonly == 1)
+				{
+					split(mraw, BGR);
+					//by default opencv puts channels in BGR order
+					BGR[2] = Mat::zeros(mraw.rows, mraw.cols, CV_8UC1); // red channel is set to 0
+					BGR[0] = Mat::zeros(mraw.rows, mraw.cols, CV_8UC1); // blue channel is set to 0
+					merge(BGR,3,m);
+				}
+				
+				if (Bonly == 1)
+				{
+					split(mraw, BGR);
+					//by default opencv puts channels in BGR order
+					BGR[1] = Mat::zeros(mraw.rows, mraw.cols, CV_8UC1); // green channel is set to 0
+					BGR[2] = Mat::zeros(mraw.rows, mraw.cols, CV_8UC1); // red channel is set to 0
+					merge(BGR,3,m);
+				}
 
 				resize(m, opm, Size(), 1.0 / binvalue, 1.0 / binvalue, INTER_AREA);	// binning (averaging)
 				imshow("show", opm);
@@ -493,9 +484,9 @@ int main(int argc, char *argv[])
 					sprintf(textbuffer, "fps = %d ", fps / 5);
 					firstrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
 					putText(statusimg, textbuffer, Point(0, 30), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
-					//sprintf(textbuffer, "%03d images acq.", indextemp);
-					//secrowofstatusimgRHS = Mat::zeros(cv::Size(300, 50), CV_64F);
-					//putText(statusimg, textbuffer, Point(300, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+					sprintf(textbuffer, "%03d images acq.", indextemp);
+					secrowofstatusimgRHS = Mat::zeros(cv::Size(300, 50), CV_64F);
+					putText(statusimg, textbuffer, Point(300, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
 					imshow("Status", statusimg);
 					fps = 0;
 					t_start = time(NULL);
@@ -530,7 +521,138 @@ int main(int argc, char *argv[])
 					doneflag = 1;
 					break;
 
-				
+				case '+':
+				case '=':
+
+					camtime = camtime + 100;
+					ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+					if (ret == QHYCCD_SUCCESS)
+					{
+						sprintf(textbuffer, "Exp time = %d ", camtime);
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+
+					}
+					else
+					{
+						sprintf(textbuffer, "CONTROL_EXPOSURE failed");
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+						goto failure;
+					}
+					break;
+
+				case '-':
+				case '_':
+
+					camtime = camtime - 100;
+					if (camtime < 0)
+						camtime = 0;
+					ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+					if (ret == QHYCCD_SUCCESS)
+					{
+						sprintf(textbuffer, "Exp time = %d ", camtime);
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+					}
+					else
+					{
+						sprintf(textbuffer, "CONTROL_EXPOSURE failed");
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+						goto failure;
+					}
+					break;
+
+				case 'U':
+
+					camtime = camtime + 10000;
+					ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+					if (ret == QHYCCD_SUCCESS)
+					{
+						sprintf(textbuffer, "Exp time = %d ", camtime);
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+					}
+					else
+					{
+						sprintf(textbuffer, "CONTROL_EXPOSURE failed");
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+						goto failure;
+					}
+					break;
+				case 'D':
+
+					camtime = camtime - 10000;
+					if (camtime < 0)
+						camtime = 0;
+					ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+					if (ret == QHYCCD_SUCCESS)
+					{
+						sprintf(textbuffer, "Exp time = %d ", camtime);
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+					}
+					else
+					{
+						sprintf(textbuffer, "CONTROL_EXPOSURE failed");
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+						goto failure;
+					}
+					break;
+				case 'u':
+
+					camtime = camtime + 1000;
+					ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+					if (ret == QHYCCD_SUCCESS)
+					{
+						sprintf(textbuffer, "Exp time = %d ", camtime);
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+					}
+					else
+					{
+						sprintf(textbuffer, "CONTROL_EXPOSURE failed");
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+						goto failure;
+					}
+					break;
+				case 'd':
+
+					camtime = camtime - 1000;
+					if (camtime < 0)
+						camtime = 0;
+					ret = SetQHYCCDParam(camhandle, CONTROL_EXPOSURE, camtime); //handle, parameter name, exposure time (which is in us)
+					if (ret == QHYCCD_SUCCESS)
+					{
+						sprintf(textbuffer, "Exp time = %d ", camtime);
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+					}
+					else
+					{
+						sprintf(textbuffer, "CONTROL_EXPOSURE failed");
+						secrowofstatusimg = Mat::zeros(cv::Size(600, 50), CV_64F);
+						putText(statusimg, textbuffer, Point(0, 80), FONT_HERSHEY_SIMPLEX, 1, Scalar(255, 255, 255), 3, 1);
+						imshow("Status", statusimg);
+						goto failure;
+					}
+					break;
+
 				case 's':
 				case 'S':
 				case ' ':
@@ -542,19 +664,54 @@ int main(int argc, char *argv[])
 				default:
 					break;
 
-				}
+				} // switch case end
 
 				if (doneflag == 1)
 				{
 					break;
 				}
+				
+				if (channels > 1)
+				{
+					// if it is a monochrome camera, channels=1 - 
+					// only if it is a colour camera do we process
+					// the code below.
+					switch (key)
+					{
+
+					case 'r':
+					case 'R':
+						if (Ronly == 0)
+							Ronly = 1;
+						else
+							Ronly = 0;
+						break;
+						
+					case 'g':
+					case 'G':
+						if (Gonly == 0)
+							Gonly = 1;
+						else
+							Gonly = 0;
+						break;
+						
+					case 'b':
+					case 'B':
+						if (Bonly == 0)
+							Bonly = 1;
+						else
+							Bonly = 0;
+						break;
+					}	// end switch case for RGB
+				}	// end if channels > 1
+					
 
 			}  // if ret success end
 		} // inner while loop end
 
 	} // end of if found 
 
-/*
+
 	if (camhandle)
 	{
 		StopQHYCCDLive(camhandle);
@@ -581,7 +738,7 @@ int main(int argc, char *argv[])
 	{
 		goto failure;
 	}
-*/
+
 
 	return 0;
 
