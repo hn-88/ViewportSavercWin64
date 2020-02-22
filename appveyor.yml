@@ -14,9 +14,9 @@ install:
 - cmd: setx -m OPENCV_DIR C:\tools\OpenCV\Build\x64\vc14
 - mkdir "%QHY_HOME%
 - cd "%QHY_HOME%"
-- appveyor DownloadFile http://www.qhyccd.com/file/repository/latestSoftAndDirver/SDK/V20200219/WINDOWS_qhyccd_V20200219_0.zip
-- 7z x "WINDOWS_qhyccd_V20200219_0.zip" > nul
-- cmd: setx -m QHY_DIR %QHY_HOME%/WINDOWS_qhyccd_V20200219_0/x64
+- appveyor DownloadFile http://www.qhyccd.com/file/repository/latestSoftAndDirver/SDK/V5.1.0/WINDOWS_qhyccd_V20190628_0.zip
+- 7z x "WINDOWS_qhyccd_V20190628_0.zip" > nul
+- cmd: setx -m QHY_DIR %QHY_HOME%/WINDOWS_qhyccd_V20190628_0/x64
 - refreshenv
 
 build:
